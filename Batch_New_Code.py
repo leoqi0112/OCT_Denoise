@@ -118,6 +118,6 @@ def process_images_in_folder(input_folder, output_base_folder):
         print(f"All threshold images and Excel files saved in folder: {output_folder}")
 
 # Call the function with the input and output folder paths
-input_folder = 'D:\Graza Lab\Tommy_Program\Denoising_Input_Folder'
-output_base_folder = 'D:\Graza Lab\Tommy_Program\Denoising_Output_Folder'
+input_folder = 'Denoising_Input_Folder'
+output_base_folder = 'Denoising_Output_Folder'
 process_images_in_folder(input_folder, output_base_folder)
