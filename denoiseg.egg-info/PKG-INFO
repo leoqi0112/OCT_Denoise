@@ -1,0 +1,29 @@
+Metadata-Version: 2.1
+Name: denoiseg
+Version: 0.3.1
+Summary: DenoiSeg
+Home-page: https://github.com/juglab/DenoiSeg/
+Author: Tim-Oliver Buchholz, Mangal Prakash, Alexander Krull, Florian Jug
+Author-email: tim-oliver.buchholz@fmi.ch, prakash@mpi-cbg.de, a.f.f.krull@bham.ac.uk, florian.jug@fht.org
+License: BSD 3-Clause License
+Project-URL: Repository, https://github.com/juglab/DenoiSeg/
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Description-Content-Type: text/markdown
+Requires-Dist: n2v>=0.3.2
+Requires-Dist: wrapt<=1.12.1
+Requires-Dist: pathlib2; python_version < "3"
+Requires-Dist: backports.tempfile; python_version < "3.4"
+Requires-Dist: csbdeep<0.8.0,>=0.7.2
+Requires-Dist: numpy
+Requires-Dist: numba
+Requires-Dist: scikit-learn
+Requires-Dist: scikit-image
+
+# OCT_Denoise

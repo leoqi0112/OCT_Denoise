@@ -1,3 +1,9 @@
 # Ignore Denoising folders
 Denoising_Input_Folder/
 Denoising_Output_Folder/
+
+# Ignore .conda file
+.conda
+
+# Ignore .DS_Store file
+.DS_Store

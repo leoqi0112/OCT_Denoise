@@ -1,0 +1,13 @@
+n2v>=0.3.2
+wrapt<=1.12.1
+csbdeep<0.8.0,>=0.7.2
+numpy
+numba
+scikit-learn
+scikit-image
+
+[:python_version < "3"]
+pathlib2
+
+[:python_version < "3.4"]
+backports.tempfile
