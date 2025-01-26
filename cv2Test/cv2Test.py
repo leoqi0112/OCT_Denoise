@@ -161,29 +161,38 @@ def main():
 
     # Extract the top boundary from the mask
     top_boundary = extract_top_boundary_from_mask(mask)
-    # Smooth the top boundary
+    # Smooth the top boundary (x-values stay the same, only y smoothed)
     top_boundary_smooth = smooth_boundary(top_boundary, window_size=15, poly_order=2)
 
-    # Find the subtle lower boundary at least 25 pixels below top boundary
+    # List of thresholds we want to test
     thresh_vals = [60, 65, 70, 75, 80]
 
+    # Generate lower boundaries for each threshold
     lower_boundaries = generate_lower_bound(img, top_boundary, thresh_vals)
 
-    i = 0
-    for lower_boundary in lower_boundaries:
+    # Loop over each threshold and the corresponding lower boundary
+    for i, lower_boundary in enumerate(lower_boundaries):
+        # 1) Remove spikes
         lower_boundary_re = reduce_spikes(lower_boundary)
-
+        # 2) Smooth again
         lower_boundary_smooth = smooth_boundary(lower_boundary_re, window_size=27, poly_order=2)
 
-        # Create the final segmented layer mask
-        layer_mask = segment_layer(img, top_boundary, lower_boundary_smooth)
+        # 3) Calculate average thickness
+        #    We use top_boundary_smooth so that both top/bottom are smoothed.
+        avg_thickness = calculate_average_thickness(top_boundary_smooth, lower_boundary_smooth)
+        print(f"Threshold = {thresh_vals[i]} => Average thickness: {avg_thickness:.2f} pixels")
 
-        # Visualization
+        # Create the final segmented layer mask
+        layer_mask = segment_layer(img, top_boundary_smooth, lower_boundary_smooth)
+
+        # Visualization (optional display or save)
         overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        for (x,y) in top_boundary:
-            cv2.circle(overlay, (int(x), int(y)), 1, (0,255,0), -1) # Green for top
+        # Mark top boundary (green)
+        for (x,y) in top_boundary_smooth:
+            cv2.circle(overlay, (int(x), int(y)), 1, (0,255,0), -1)
+        # Mark lower boundary (red)
         for (x,y) in lower_boundary_smooth:
-            cv2.circle(overlay, (int(x), int(y)), 1, (0,0,255), -1) # Red for bottom
+            cv2.circle(overlay, (int(x), int(y)), 1, (0,0,255), -1)
 
         # Save results
         # cv2.imwrite(f"original_{thresh_vals[i]}.png", img)  # Save the original image
