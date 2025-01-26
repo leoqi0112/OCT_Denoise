@@ -25,6 +25,14 @@ def calculate_average_thickness(top_boundary, lower_boundary):
     avg_thickness = np.mean(thicknesses)
     return avg_thickness
 
+def pixels_to_micrometers(img, height, width, measurement):
+    pixels_per_100_micrometers = 0
+    for i in range(width - 1, -1, -1):
+        if img[height - 1 - 67, i] >= 240:
+            pixels_per_100_micrometers = pixels_per_100_micrometers + 1
+
+    return (float(measurement) / float(pixels_per_100_micrometers)) * 100.0
+
 # Function to reduce spiking by limiting the difference between consecutive points
 def reduce_spikes(boundary, max_diff=5):
     """
@@ -136,7 +144,7 @@ def generate_lower_bound(img, top_boundary, thresh_vals):
 
 def main():
     # Load image
-    img = cv2.imread('cv2Test\Test_Images\original.jpg', cv2.IMREAD_GRAYSCALE)
+    img = cv2.imread('Test_Images/original.jpg', cv2.IMREAD_GRAYSCALE) #Edit this when running
     if img is None:
         print("Could not load image.")
         return
@@ -166,6 +174,8 @@ def main():
 
     # Find the subtle lower boundary at least 25 pixels below top boundary
     thresh_vals = [60, 65, 70, 75, 80]
+    thickness_data = []
+    height, width = img.shape
 
     lower_boundaries = generate_lower_bound(img, top_boundary, thresh_vals)
 
@@ -174,6 +184,10 @@ def main():
         lower_boundary_re = reduce_spikes(lower_boundary)
 
         lower_boundary_smooth = smooth_boundary(lower_boundary_re, window_size=27, poly_order=2)
+
+        # Record thickness data
+        thickness_in_pixels = calculate_average_thickness(top_boundary, lower_boundary_smooth)
+        thickness_data.append(pixels_to_micrometers(img, height, width, thickness_in_pixels))
 
         # Create the final segmented layer mask
         layer_mask = segment_layer(img, top_boundary, lower_boundary_smooth)
@@ -201,6 +215,8 @@ def main():
         cv2.imshow('Overlay with Boundaries', overlay)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+
+    print(thickness_data)
 
 if __name__ == "__main__":
     main()

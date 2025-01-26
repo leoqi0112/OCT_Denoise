@@ -1,0 +1,12 @@
+# Ignore Python bytecode
+*.pyc
+__pycache__/
+
+# Ignore log files
+*.log
+
+# Ignore environment files
+.env
+
+# Ignore build artifacts
+/build/
