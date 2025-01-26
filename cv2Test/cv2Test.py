@@ -144,7 +144,7 @@ def generate_lower_bound(img, top_boundary, thresh_vals):
 
 def main():
     # Load image
-    img = cv2.imread('Test_Images/original.jpg', cv2.IMREAD_GRAYSCALE) #Edit this when running
+    img = cv2.imread('Test_Images/im2.jpg', cv2.IMREAD_GRAYSCALE) #Edit this when running
     if img is None:
         print("Could not load image.")
         return
