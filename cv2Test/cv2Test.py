@@ -1,82 +1,69 @@
 import cv2
+import os
 import numpy as np
+import pandas as pd
 from scipy.signal import savgol_filter
-
 
 def calculate_average_thickness(top_boundary, lower_boundary):
     """
     Calculates the average vertical thickness between top and bottom boundaries.
     Assumes both boundaries have the same length and aligned x-coordinates.
-
-    top_boundary:   Nx2 numpy array of [x, y_top]
-    lower_boundary: Nx2 numpy array of [x, y_bottom]
-
-    Returns:
-        A float representing the average vertical distance (thickness).
     """
-    # Check if both boundaries have the same shape
     if top_boundary.shape != lower_boundary.shape:
         raise ValueError("Boundaries must have the same shape to calculate thickness.")
 
-    # Calculate thickness at each column (difference in y-coordinates)
     thicknesses = lower_boundary[:,1] - top_boundary[:,1]
-
-    # Compute average thickness
-    avg_thickness = np.mean(thicknesses)
-    return avg_thickness
+    return np.mean(thicknesses)
 
 def pixels_to_micrometers(img, height, width, measurement):
+    """
+    Convert a 'measurement' in pixels to micrometers based on a scale in the bottom row.
+    Adjust the row index if your scale is located elsewhere.
+    """
     pixels_per_100_micrometers = 0
+    # Example: scanning row = (height - 1 - 67)
     for i in range(width - 1, -1, -1):
         if img[height - 1 - 67, i] >= 240:
-            pixels_per_100_micrometers = pixels_per_100_micrometers + 1
+            pixels_per_100_micrometers += 1
 
+    if pixels_per_100_micrometers == 0:
+        return 0.0
+
+    # measurement is in pixels; scale it to micrometers
     return (float(measurement) / float(pixels_per_100_micrometers)) * 100.0
 
-# Function to reduce spiking by limiting the difference between consecutive points
 def reduce_spikes(boundary, max_diff=5):
-    """
-    Reduces sudden vertical spikes in a top boundary array.
-    
-    boundary: Nx2 numpy array of [x, y] points.
-    max_diff: Maximum allowed difference in vertical direction between consecutive points.
-    """
     smoothed_boundary = [boundary[0]]
     for i in range(1, len(boundary)):
         prev_point = smoothed_boundary[-1]
         curr_point = boundary[i].copy()
 
-        # If the vertical difference is too large, clamp it to max_diff
         if abs(curr_point[1] - prev_point[1]) > max_diff:
             direction = np.sign(curr_point[1] - prev_point[1])
             curr_point[1] = prev_point[1] + direction * max_diff
 
         smoothed_boundary.append(curr_point)
-
     return np.array(smoothed_boundary, dtype=boundary.dtype)
 
 def smooth_boundary(boundary_points, window_size=11, poly_order=2):
     xs = boundary_points[:,0]
     ys = boundary_points[:,1]
-    ys_smooth = savgol_filter(ys, window_length=window_size, polyorder=poly_order)
+    # Ensure window size is valid
+    if len(ys) < window_size:
+        # Make window size smaller if needed
+        window_size = len(ys) if (len(ys) % 2 == 1) else (len(ys) - 1)
+    ys_smooth = savgol_filter(ys, window_length=max(3, window_size), polyorder=poly_order)
     return np.column_stack((xs, ys_smooth))
 
 def find_subtle_boundary(img, top_boundary, offset=25, search_depth=50, gradient_thresh=10):
     """
-    Find a subtle lower boundary starting at least 'offset' pixels below top_boundary.
-    top_boundary: Nx2 array of [x, y_top]
-    img: Grayscale image
-    offset: minimum offset from top boundary
-    search_depth: how far below top boundary to search
-    gradient_thresh: threshold on vertical gradient to define a boundary
+    Find a subtle lower boundary starting at least 'offset' pixels below top_boundary
+    by searching for strong vertical gradient.
     """
-    h, w = img.shape 
-    lower_boundary = [] 
-
-    # Pre-smooth image to reduce noise 
-    img_blur = cv2.GaussianBlur(img, (3,3), 0) 
-    
-    # Compute vertical gradient using Sobel in y-direction
+    h, w = img.shape
+    lower_boundary = []
+    # Slight blur to reduce noise
+    img_blur = cv2.GaussianBlur(img, (3,3), 0)
     grad_y = cv2.Sobel(img_blur, cv2.CV_64F, 0, 1, ksize=3)
     grad_y_abs = cv2.convertScaleAbs(grad_y)
 
@@ -86,144 +73,145 @@ def find_subtle_boundary(img, top_boundary, offset=25, search_depth=50, gradient
         y_end = min(y_start + search_depth, h-1)
 
         column_grad = grad_y_abs[y_start:y_end, x_int]
-
-        # Find first location where gradient surpasses threshold
         candidates = np.where(column_grad > gradient_thresh)[0]
         if len(candidates) > 0:
             boundary_y = y_start + candidates[0]
         else:
-            # Fallback: no boundary found, take the bottom of the search region
             boundary_y = y_end
 
         lower_boundary.append([x_int, boundary_y])
 
     lower_boundary = np.array(lower_boundary)
-    # Smooth the lower boundary
     lower_boundary_smooth = smooth_boundary(lower_boundary, window_size=15, poly_order=2)
     return lower_boundary_smooth
 
-def segment_layer(img, top_boundary, lower_boundary):
-    """
-    Create a mask for the layer between top_boundary and lower_boundary.
-    top_boundary and lower_boundary should be arrays of shape Nx2 with (x, y).
-    Assume both have the same set of x-coordinates.
-    """
-    mask = np.zeros_like(img, dtype=np.uint8)
-    for (x_top, y_top), (x_bottom, y_bottom) in zip(top_boundary, lower_boundary):
-        x_t = int(x_top)
-        y_t = int(y_top)
-        y_b = int(y_bottom)
-        if y_b > y_t:
-            mask[y_t:y_b+1, x_t] = 255
-    return mask
-
 def extract_top_boundary_from_mask(mask):
     """
-    For each column in the mask, find the topmost white pixel.
+    For each column in the mask, find the topmost (smallest y) white pixel.
+    Returns Nx2 array of [x, y].
     """
     h, w = mask.shape
-    top_boundary = []
+    boundary_points = []
     for x in range(w):
-        column = mask[:, x]
-        # Find index of first white pixel
-        whites = np.where(column > 0)[0]
+        col = mask[:, x]
+        whites = np.where(col > 0)[0]
         if len(whites) > 0:
-            y_top = whites[0]
-            top_boundary.append([x, y_top])
-        else:
-            # No white pixel in this column
-            pass
-    return np.array(top_boundary, dtype=np.float32)
+            boundary_points.append([x, whites[0]])
+    return np.array(boundary_points, dtype=float)
 
 def generate_lower_bound(img, top_boundary, thresh_vals):
+    """
+    Generate a list of lower boundaries, one for each gradient threshold.
+    """
     boundaries = []
     for val in thresh_vals:
-        boundaries.append(find_subtle_boundary(img, top_boundary, offset=25, search_depth=40, gradient_thresh=val))
-
+        boundaries.append(find_subtle_boundary(
+            img, top_boundary, offset=25, search_depth=40, gradient_thresh=val
+        ))
     return boundaries
 
-def main():
-    # Load image
-    img = cv2.imread('Test_Images/original.jpg', cv2.IMREAD_GRAYSCALE) #Edit this when running
-    if img is None:
-        print("Could not load image.")
-        return
+def process_images_in_folder(input_folder, output_base_folder):
+    """
+    1) Iterates over all images in 'input_folder'.
+    2) For each image, creates a subfolder in 'output_base_folder' with the same base name.
+    3) Processes thresholds [60, 65, 70, 75, 80], saves 5 overlays & 1 Excel for that image.
+    """
 
-    # Preprocess
-    blurred = cv2.GaussianBlur(img, (3,3), 0)
+    #os.makedirs(output_base_folder, exist_ok=True)
+    image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
 
-    # Threshold (Otsu)
-    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    print(len(image_files))
 
-    # Find largest contour
-    contours, hierarchy = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        print("No contours found.")
-        return
-    
-    largest_contour = max(contours, key=cv2.contourArea)
-
-    # Draw mask of largest contour
-    mask = np.zeros_like(binary)
-    cv2.drawContours(mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
-
-    # Extract the top boundary from the mask
-    top_boundary = extract_top_boundary_from_mask(mask)
-    # Smooth the top boundary (x-values stay the same, only y smoothed)
-    top_boundary_smooth = smooth_boundary(top_boundary, window_size=15, poly_order=2)
-
-    # List of thresholds we want to test
+    # The thresholds we want to test
     thresh_vals = [60, 65, 70, 75, 80]
-    thickness_data = []
-    height, width = img.shape
 
-    # Generate lower boundaries for each threshold
-    lower_boundaries = generate_lower_bound(img, top_boundary, thresh_vals)
+    for image_file in image_files:
+        img_path = os.path.join(input_folder, image_file)
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            print(f"Could not load image {image_file}, skipping.")
+            continue
+        
+        height, width = img.shape[:2]
 
-    # Loop over each threshold and the corresponding lower boundary
-    for i, lower_boundary in enumerate(lower_boundaries):
-        # 1) Remove spikes
-        lower_boundary_re = reduce_spikes(lower_boundary)
-        # 2) Smooth again
-        lower_boundary_smooth = smooth_boundary(lower_boundary_re, window_size=27, poly_order=2)
+        # Create a subfolder for this image
+        base_name = os.path.splitext(image_file)[0]
+        image_output_folder = os.path.join(output_base_folder, base_name)
+        os.makedirs(image_output_folder, exist_ok=True)
 
-        # Record thickness data
-        thickness_in_pixels = calculate_average_thickness(top_boundary, lower_boundary_smooth)
-        thickness_data.append(pixels_to_micrometers(img, height, width, thickness_in_pixels))
+        # 1) Preprocess + find largest contour
+        blurred = cv2.GaussianBlur(img, (3,3), 0)
+        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            print(f"No contours found in {image_file}, skipping.")
+            continue
 
-        # Create the final segmented layer mask
-        layer_mask = segment_layer(img, top_boundary_smooth, lower_boundary_smooth)
+        largest_contour = max(contours, key=cv2.contourArea)
+        # Draw filled largest contour on a mask
+        mask = np.zeros_like(binary)
+        cv2.drawContours(mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
 
-        # Visualization (optional display or save)
-        overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        # Mark top boundary (green)
-        for (x,y) in top_boundary_smooth:
-            cv2.circle(overlay, (int(x), int(y)), 1, (0,255,0), -1)
-        # Mark lower boundary (red)
-        for (x,y) in lower_boundary_smooth:
-            cv2.circle(overlay, (int(x), int(y)), 1, (0,0,255), -1)
+        # Extract + smooth top boundary
+        top_boundary = extract_top_boundary_from_mask(mask)
+        if len(top_boundary) < 2:
+            print(f"Not enough points in top boundary for {image_file}, skipping.")
+            continue
+        top_boundary_smooth = smooth_boundary(top_boundary, window_size=15, poly_order=2)
 
-        # Save results
-        # cv2.imwrite(f"original_{thresh_vals[i]}.png", img)  # Save the original image
-        # cv2.imwrite(f"binary_{thresh_vals[i]}.png", binary)  # Save the binary image
-        # cv2.imwrite(f"largest_component_mask_{thresh_vals[i]}.png", mask)  # Save the largest component mask
-        # cv2.imwrite(f"segmented_layer_mask_{thresh_vals[i]}.png", layer_mask)  # Save the segmented layer mask
-        cv2.imwrite(f"overlay_with_boundaries_{thresh_vals[i]}.png", overlay)
-        i += 1
+        # Generate lower boundaries for each threshold
+        lower_boundaries = generate_lower_bound(img, top_boundary_smooth, thresh_vals)
 
-        # Display results
-        #cv2.imshow('Original', img)
-        #cv2.imshow('Binary', binary)
-        #cv2.imshow('Largest Component Mask', mask)
-        #cv2.imshow('Segmented Layer Mask', layer_mask)
-        cv2.imshow('Overlay with Boundaries', overlay)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # We'll store the results for this image in a list,
+        # then convert to Excel at the end
+        results_for_image = []
 
-    print(thickness_data)
+        for i, tval in enumerate(thresh_vals):
+            lower_boundary = lower_boundaries[i]
+            # Remove spikes + final smooth
+            lower_boundary_re = reduce_spikes(lower_boundary)
+            lower_boundary_smooth = smooth_boundary(lower_boundary_re, window_size=27, poly_order=2)
+
+            # Calculate average thickness (in pixels)
+            thickness_in_pixels = calculate_average_thickness(top_boundary_smooth, lower_boundary_smooth)
+            # Convert to micrometers based on your scale
+            thickness_in_micrometers = pixels_to_micrometers(img, height, width, thickness_in_pixels)
+
+            # Add row for Excel
+            results_for_image.append([
+                image_file,       # Image Name
+                tval,             # Threshold
+                thickness_in_micrometers
+            ])
+
+            # Create overlay for visualization
+            overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            # Draw top boundary (green)
+            for (x,y) in top_boundary_smooth:
+                cv2.circle(overlay, (int(x), int(y)), 1, (0,255,0), -1)
+            # Draw lower boundary (red)
+            for (x,y) in lower_boundary_smooth:
+                cv2.circle(overlay, (int(x), int(y)), 1, (0,0,255), -1)
+        
+            # Save overlay
+            overlay_filename = f"{base_name}_overlay_{tval}.png"
+            overlay_path = os.path.join(image_output_folder, overlay_filename)
+            cv2.imwrite(overlay_path, overlay)
+
+        # Now save the Excel for just this image
+        df = pd.DataFrame(results_for_image, columns=["Image Name", "Threshold", "Thickness_micrometers"])
+        excel_filename = f"{base_name}_thickness_summary.xlsx"
+        excel_path = os.path.join(image_output_folder, excel_filename)
+        df.to_excel(excel_path, index=False)
+
+        print(f"Finished processing {image_file}")
+        print(f"Saved 5 overlays + Excel to: {image_output_folder}\n")
 
 if __name__ == "__main__":
-    main()
+    # Example usage
+    input_folder = r'D:\Graza Lab\OCT_Denoise\OCT_Denoise\cv2Test\Input_Folder'               # TODO: Set to your input folder
+    output_base_folder = r'D:\Graza Lab\OCT_Denoise\OCT_Denoise\cv2Test\Output_Folder'      # TODO: Set to your output folder
+    process_images_in_folder(input_folder, output_base_folder)
 
 
 # import cv2
