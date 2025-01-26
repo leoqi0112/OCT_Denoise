@@ -2,6 +2,29 @@ import cv2
 import numpy as np
 from scipy.signal import savgol_filter
 
+
+def calculate_average_thickness(top_boundary, lower_boundary):
+    """
+    Calculates the average vertical thickness between top and bottom boundaries.
+    Assumes both boundaries have the same length and aligned x-coordinates.
+
+    top_boundary:   Nx2 numpy array of [x, y_top]
+    lower_boundary: Nx2 numpy array of [x, y_bottom]
+
+    Returns:
+        A float representing the average vertical distance (thickness).
+    """
+    # Check if both boundaries have the same shape
+    if top_boundary.shape != lower_boundary.shape:
+        raise ValueError("Boundaries must have the same shape to calculate thickness.")
+
+    # Calculate thickness at each column (difference in y-coordinates)
+    thicknesses = lower_boundary[:,1] - top_boundary[:,1]
+
+    # Compute average thickness
+    avg_thickness = np.mean(thicknesses)
+    return avg_thickness
+
 # Function to reduce spiking by limiting the difference between consecutive points
 def reduce_spikes(boundary, max_diff=5):
     """
@@ -39,11 +62,11 @@ def find_subtle_boundary(img, top_boundary, offset=25, search_depth=50, gradient
     search_depth: how far below top boundary to search
     gradient_thresh: threshold on vertical gradient to define a boundary
     """
-    h, w = img.shape
-    lower_boundary = []
+    h, w = img.shape 
+    lower_boundary = [] 
 
-    # Pre-smooth image to reduce noise
-    img_blur = cv2.GaussianBlur(img, (3,3), 0)
+    # Pre-smooth image to reduce noise 
+    img_blur = cv2.GaussianBlur(img, (3,3), 0) 
     
     # Compute vertical gradient using Sobel in y-direction
     grad_y = cv2.Sobel(img_blur, cv2.CV_64F, 0, 1, ksize=3)
@@ -106,7 +129,7 @@ def extract_top_boundary_from_mask(mask):
 
 def main():
     # Load image
-    img = cv2.imread('./Test_Images/original.jpg', cv2.IMREAD_GRAYSCALE)
+    img = cv2.imread('cv2Test\Test_Images\original.jpg', cv2.IMREAD_GRAYSCALE)
     if img is None:
         print("Could not load image.")
         return
@@ -131,32 +154,35 @@ def main():
 
     # Extract the top boundary from the mask
     top_boundary = extract_top_boundary_from_mask(mask)
-
     # Smooth the top boundary
     top_boundary_smooth = smooth_boundary(top_boundary, window_size=15, poly_order=2)
 
     # Find the subtle lower boundary at least 25 pixels below top boundary
     lower_boundary = find_subtle_boundary(img, top_boundary, offset=25, search_depth=40, gradient_thresh=70)
-
+    # Reduce spikes
     lower_boundary_re = reduce_spikes(lower_boundary)
-
+    # Smooth again
     lower_boundary_smooth = smooth_boundary(lower_boundary_re, window_size=27, poly_order=2)
 
+    # Calculate the average thickness
+    avg_thickness = calculate_average_thickness(top_boundary_smooth, lower_boundary_smooth)
+    print(f"Average thickness: {avg_thickness:.2f} pixels")
+
     # Create the final segmented layer mask
-    layer_mask = segment_layer(img, top_boundary, lower_boundary_smooth)
+    layer_mask = segment_layer(img, top_boundary_smooth, lower_boundary_smooth)
 
     # Visualization
     overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    for (x,y) in top_boundary:
+    for (x,y) in top_boundary_smooth:
         cv2.circle(overlay, (int(x), int(y)), 1, (0,255,0), -1) # Green for top
     for (x,y) in lower_boundary_smooth:
         cv2.circle(overlay, (int(x), int(y)), 1, (0,0,255), -1) # Red for bottom
 
     # Display results
-    cv2.imshow('Original', img)
-    cv2.imshow('Binary', binary)
-    cv2.imshow('Largest Component Mask', mask)
-    cv2.imshow('Segmented Layer Mask', layer_mask)
+    #cv2.imshow('Original', img)
+    #cv2.imshow('Binary', binary)
+    #cv2.imshow('Largest Component Mask', mask)
+    #cv2.imshow('Segmented Layer Mask', layer_mask)
     cv2.imshow('Overlay with Boundaries', overlay)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
