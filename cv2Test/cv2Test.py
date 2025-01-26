@@ -104,6 +104,13 @@ def extract_top_boundary_from_mask(mask):
             pass
     return np.array(top_boundary, dtype=np.float32)
 
+def generate_lower_bound(img, top_boundary, thresh_vals):
+    boundaries = []
+    for val in thresh_vals:
+        boundaries.append(find_subtle_boundary(img, top_boundary, offset=25, search_depth=40, gradient_thresh=val))
+
+    return boundaries
+
 def main():
     # Load image
     img = cv2.imread('./Test_Images/original.jpg', cv2.IMREAD_GRAYSCALE)
@@ -136,30 +143,42 @@ def main():
     top_boundary_smooth = smooth_boundary(top_boundary, window_size=15, poly_order=2)
 
     # Find the subtle lower boundary at least 25 pixels below top boundary
-    lower_boundary = find_subtle_boundary(img, top_boundary, offset=25, search_depth=40, gradient_thresh=70)
+    thresh_vals = [60, 65, 70, 75, 80]
 
-    lower_boundary_re = reduce_spikes(lower_boundary)
+    lower_boundaries = generate_lower_bound(img, top_boundary, thresh_vals)
 
-    lower_boundary_smooth = smooth_boundary(lower_boundary_re, window_size=27, poly_order=2)
+    i = 0
+    for lower_boundary in lower_boundaries:
+        lower_boundary_re = reduce_spikes(lower_boundary)
 
-    # Create the final segmented layer mask
-    layer_mask = segment_layer(img, top_boundary, lower_boundary_smooth)
+        lower_boundary_smooth = smooth_boundary(lower_boundary_re, window_size=27, poly_order=2)
 
-    # Visualization
-    overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    for (x,y) in top_boundary:
-        cv2.circle(overlay, (int(x), int(y)), 1, (0,255,0), -1) # Green for top
-    for (x,y) in lower_boundary_smooth:
-        cv2.circle(overlay, (int(x), int(y)), 1, (0,0,255), -1) # Red for bottom
+        # Create the final segmented layer mask
+        layer_mask = segment_layer(img, top_boundary, lower_boundary_smooth)
 
-    # Display results
-    cv2.imshow('Original', img)
-    cv2.imshow('Binary', binary)
-    cv2.imshow('Largest Component Mask', mask)
-    cv2.imshow('Segmented Layer Mask', layer_mask)
-    cv2.imshow('Overlay with Boundaries', overlay)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+        # Visualization
+        overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        for (x,y) in top_boundary:
+            cv2.circle(overlay, (int(x), int(y)), 1, (0,255,0), -1) # Green for top
+        for (x,y) in lower_boundary_smooth:
+            cv2.circle(overlay, (int(x), int(y)), 1, (0,0,255), -1) # Red for bottom
+
+        # Save results
+        # cv2.imwrite(f"original_{thresh_vals[i]}.png", img)  # Save the original image
+        # cv2.imwrite(f"binary_{thresh_vals[i]}.png", binary)  # Save the binary image
+        # cv2.imwrite(f"largest_component_mask_{thresh_vals[i]}.png", mask)  # Save the largest component mask
+        # cv2.imwrite(f"segmented_layer_mask_{thresh_vals[i]}.png", layer_mask)  # Save the segmented layer mask
+        cv2.imwrite(f"overlay_with_boundaries_{thresh_vals[i]}.png", overlay)
+        i += 1
+
+        # Display results
+        cv2.imshow('Original', img)
+        cv2.imshow('Binary', binary)
+        cv2.imshow('Largest Component Mask', mask)
+        cv2.imshow('Segmented Layer Mask', layer_mask)
+        cv2.imshow('Overlay with Boundaries', overlay)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
